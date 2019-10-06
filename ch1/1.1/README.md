@@ -12,7 +12,7 @@ To do this we're going to use the EthCrypto library. This is a Javascript librar
 
 ## Getting Started
 
-We're starting at Section 1.1, so cd into Section 1.1 of the Chapter 1 folder `/c1_CentralPaymentOperator/1.1-Hashes_and_Signatures`. You'll be editing the Client.js file in the root (aka not a subdirectory) of this folder to complete this assignment.
+We're starting at Section 1.1, so `cd` into Section `1.1` of the Chapter 1 folder. You'll be editing the `client.js` file in the root (aka not a subdirectory) of this folder to complete this assignment.
 
 <br />
 
