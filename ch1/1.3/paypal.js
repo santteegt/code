@@ -13,11 +13,12 @@ class Paypal extends Client {
         // Paypal's initial balance
         balance: 1000000,
         // Paypal's initial nonce
-        // TODO
+        nonce: 0
       },
     };
     // pending transaction pool
     // TODO
+    this.txPool = [];
     // the history of transactions
     this.txHistory = [];
   }
@@ -60,22 +61,26 @@ class Paypal extends Client {
   // Check that the transaction nonce matches the nonce that Paypal has for the sender's account
   // note: we first have to make sure that the account is in Paypal's state before we can check it's nonce
   checkTxNonce(tx) {
+    this.checkUserAddress(tx);
+    const txData = tx.contents;
     // if the transaction nonce is greater than the nonce Paypal has for that account
-    // TODO
     // and if the transaction is not already in the pendingTX pool
-    // TODO
-    // add the transaction to the pendingTx pool
-    // TODO
-    // return false to signal that nothing more needs to be done and the transaction does not need to be processed
-    // TODO
-    // if the transaction nonce is the same as the nonce Paypal has for that account
-    // TODO
-    // return true to signal that it is ok to proceed to the nex operation
-    // TODO
-    // if the transaction nonce is less than the nonce Paypal has for that account
-    // TODO
-    // return false to signal that the transaction is invalid and the transaction should not be processed
-    // TODO
+    // console.log('ACC NONCES', txData.nonce, this.state[[txData.from]].nonce)
+    if (txData.nonce > this.state[[txData.from]].nonce) {
+      const inPool = this.txPool.find(a => a.sig == tx.sig);
+      if (!inPool) {
+        // add the transaction to the pendingTx pool
+        this.txPool.push(tx);
+      }
+      // return false to signal that nothing more needs to be done and the transaction does not need to be processed
+      return false;
+    } else if (txData.nonce == this.state[[txData.from]].nonce) { // if the transaction nonce is the same as the nonce Paypal has for that account
+      // return true to signal that it is ok to proceed to the nex operation
+      return true;
+    } else { // if the transaction nonce is less than the nonce Paypal has for that account
+      // return false to signal that the transaction is invalid and the transaction should not be processed
+      return false;
+    }
   }
 
   // Check that the transaction is valid based on the type
@@ -112,31 +117,31 @@ class Paypal extends Client {
     // if cancel
     if (tx.contents.type === 'cancel') {
       // get the nonce of the transaction to be cancelled
-      // TODO
+      const nonce = tx.contents.nonce;
       // check pending transactions
-      // TODO
       // if the nonce of the transaction to be cancelled matches a pending transaction
-      // TODO
+      const pendingTx = this.txPool.find(a => a.sig == tx.sig && a.contents.nonce == nonce);
       // make sure that the user who is cancelling the transaction is the same user who signed the transaction to be cancelled
-      // TODO
-      // delete the old transaction
-      // TODO
-      // check already processed transactions
-      // TODO
-      // if the nonce matches delete the transaction and reverse the old transaction
-      // TODO
-      // make sure that the user who is cancelling the transaction is the same user who signed the transaction to be cancelled
-      // TODO
-      // take money back from the receiver
-      // TODO
-      // give the sender back their money
-      // TODO
-      // add the cancellation transaction to the txHistory
-      // TODO
-      // charge a fee to the user for cancelling a transaction
-      // TODO
-      // add that fee to Paypal's wallet balance
-      // TODO
+      // if (pendingTx && this.checkTxSignature(tx)) {
+      if (pendingTx) {
+        this.txPool = this.txPool.filter(a => a.sig != tx.sig);
+      } else {
+        // check already processed transactions
+        const processed = this.txHistory.find(a => a.sig == tx.sig && a.contents.nonce == nonce);
+        // if the nonce matches delete the transaction and reverse the old transaction
+        // make sure that the user who is cancelling the transaction is the same user who signed the transaction to be cancelled
+        // if (processed && this.checkTxSignature(tx)) {
+        if (processed) {
+          this.txHistory = this.txHistory.filter(a => a.sig != tx.sig);
+          // take money back from the receiver
+          // give the sender back their money
+          // add the cancellation transaction to the txHistory
+          // charge a fee to the user for cancelling a transaction
+          // add that fee to Paypal's wallet balance
+          this.reverseTx(tx);
+        }
+      }
+      return false;
     }
   }
 
@@ -149,9 +154,10 @@ class Paypal extends Client {
         // check that the type is valid
         if (this.checkTxType(tx)) {
           // check that the nonce is valid
-          // TODO
-          // if all checks pass return true
-          return true;
+          if (this.checkTxNonce(tx)) {
+            // if all checks pass return true
+            return true;
+          }
         }
       }
     }
@@ -173,25 +179,43 @@ class Paypal extends Client {
     return true;
   }
 
+  reverseTx(tx) {
+    // take money back from the receiver
+    this.state[tx.contents.to].balance -= tx.contents.amount;
+    // give the sender back their money
+    this.state[tx.contents.from].balance += tx.contents.amount;
+    // add the cancellation transaction to the txHistory
+    this.txHistory.push(tx);
+    // cancellation fee
+    const fee = tx.contents.amount * 0.01;
+    // charge a fee to the user for cancelling a transaction
+    this.state[tx.contents.from].balance -= fee;
+    // add that fee to Paypal's wallet balance
+    this.state[this.wallet.address].balance += fee;
+  }
+
   // Processes pending TX
   processPendingTx() {
     // for every transaction in the pendingTx pool
-    // TODO
-    // get the sender address
-    // TODO
-    // get the nonce Paypal has for that account
-    // TODO
-    // get the nonce on the transaction
-    // TODO
-    // if the nonce Paypal has for an account matches the nonce that is on the transaction
-    // TODO
-    // copy the pending transaction into memory
-    // TODO
-    // delete the transaction from the pendingTx pool
-    // TODO
-    // process the transaction
-    // TODO
-    // note: it is important to delete the transaction form the pendingTx pool BEFORE processing the transaction, otherwise we could get stuck in an infinite loop processing transactions and never deleting them
+    const poolMemory = this.txPool.slice(0);
+    poolMemory.forEach((tx) => {
+      // get the sender address
+      const sender = tx.contents.from;
+      // get the nonce Paypal has for that account
+      const senderNonce = this.state[[sender]].nonce;
+      // get the nonce on the transaction
+      const txNonce = tx.contents.nonce;
+      // if the nonce Paypal has for an account matches the nonce that is on the transaction
+      if (txNonce == senderNonce) {
+        // process the transaction
+        if (this.checkTx(tx)) {
+          // note: it is important to delete the transaction form the pendingTx pool BEFORE processing the transaction, otherwise we could get stuck in an infinite loop processing transactions and never deleting them  
+          this.txPool = this.txPool.filter(a => a.sig != tx.sig);
+          // apply the transaction to Paypal's state
+          this.applyTx(tx);
+        }
+      }
+    });
   }
 
   // Checks if a transaction is valid, then processes it, then checks if there are any valid transactions in the pending transaction pool and processes those too
@@ -202,7 +226,9 @@ class Paypal extends Client {
       this.applyTx(tx);
       // check if any pending transactions are now valid, and if so process them too
       this.processPendingTx();
+      return true;
     }
+    return false;
   }
 }
 
